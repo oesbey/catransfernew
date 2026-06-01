@@ -1,0 +1,331 @@
+/* ============================================
+   CODEAPP HAVALIMANI TRANSFER - PUBLIC STYLES
+   ============================================ */
+
+/* === TRANSFER BAR (ANA KONTAINER) === */
+.caht-transfer-form-wrapper {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 15px;
+    box-sizing: border-box;
+}
+
+.caht-transfer-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 0;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2c5282 50%, #3182ce 100%);
+    padding: 20px 24px;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(30, 58, 95, 0.3);
+    position: relative;
+    flex-wrap: nowrap;
+}
+
+/* === INPUT GROUP (BEYAZ KUTULAR) === */
+.caht-input-group {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin-right: 8px;
+    min-width: 140px;
+    position: relative;
+    flex: 1;
+    transition: box-shadow 0.2s ease;
+}
+
+.caht-input-group:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.caht-input-group-large {
+    flex: 2;
+    min-width: 200px;
+}
+
+.caht-input-group-small {
+    min-width: 110px;
+    flex: 0 0 auto;
+}
+
+.caht-input-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1a202c;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* === INPUT === */
+.caht-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    color: #4a5568;
+    padding: 0;
+    outline: none;
+    font-family: inherit;
+}
+
+.caht-input::placeholder {
+    color: #a0aec0;
+    font-size: 13px;
+}
+
+.caht-input-datetime {
+    cursor: pointer;
+}
+
+/* === SELECT === */
+.caht-select {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    color: #4a5568;
+    padding: 0;
+    outline: none;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234a5568' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right center;
+    padding-right: 18px;
+}
+
+/* === SWAP BUTONU (YER DEĞİŞTİR) === */
+.caht-swap-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 10px;
+    margin-right: 8px;
+}
+
+.caht-swap-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid #e2e8f0;
+    color: #3182ce;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.caht-swap-btn:hover {
+    background: #3182ce;
+    color: #ffffff;
+    border-color: #3182ce;
+    transform: rotate(180deg);
+}
+
+.caht-swap-btn:active {
+    transform: rotate(180deg) scale(0.95);
+}
+
+/* === TOGGLE (GİDİŞ-DÖNÜŞ) === */
+.caht-toggle-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.caht-toggle-switch {
+    width: 44px;
+    height: 24px;
+    background: #e2e8f0;
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.caht-toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.caht-toggle-switch.active {
+    background: #3182ce;
+}
+
+.caht-toggle-switch.active::after {
+    transform: translateX(20px);
+}
+
+/* Dönüş tarihi container */
+.caht-return-container {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 10px 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    min-width: 180px;
+    border: 1px solid #e2e8f0;
+}
+
+/* === ARA BUTONU === */
+.caht-search-wrapper {
+    display: flex;
+    align-items: flex-end;
+    margin-left: 4px;
+}
+
+.caht-search-btn {
+    padding: 14px 32px;
+    background: linear-gradient(135deg, #3182ce 0%, #2b6cb0 100%);
+    color: #ffffff;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(49, 130, 206, 0.4);
+}
+
+.caht-search-btn:hover {
+    background: linear-gradient(135deg, #2b6cb0 0%, #2c5282 100%);
+    box-shadow: 0 6px 20px rgba(49, 130, 206, 0.5);
+    transform: translateY(-1px);
+}
+
+.caht-search-btn:active {
+    transform: translateY(0);
+}
+
+.caht-search-btn:disabled {
+    background: #a0aec0;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* === SUGGESTIONS (AUTOCOMPLETE) === */
+.caht-suggestions {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 9999;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    display: none;
+}
+
+.caht-suggestions.active {
+    display: block;
+}
+
+.caht-suggestion-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: #2d3748;
+    cursor: pointer;
+    border-bottom: 1px solid #f7fafc;
+    transition: background-color 0.15s ease;
+}
+
+.caht-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.caht-suggestion-item:hover {
+    background-color: #ebf8ff;
+}
+
+.caht-suggestion-item i {
+    margin-right: 10px;
+    color: #3182ce;
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+}
+
+.caht-suggestion-item.priority {
+    background-color: #ebf8ff;
+    font-weight: 600;
+    color: #2b6cb0;
+}
+
+/* ============================================
+   RESPONSIVE (MOBİL)
+   ============================================ */
+@media (max-width: 992px) {
+    .caht-transfer-bar {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .caht-input-group {
+        flex: 1 1 calc(50% - 8px);
+        min-width: 160px;
+        margin-right: 0;
+    }
+
+    .caht-input-group-large {
+        flex: 1 1 100%;
+    }
+
+    .caht-swap-wrapper {
+        display: none; /* Mobilde yer değiştir gizli */
+    }
+
+    .caht-search-wrapper {
+        flex: 1 1 100%;
+        margin-left: 0;
+    }
+
+    .caht-search-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 576px) {
+    .caht-transfer-bar {
+        padding: 16px;
+        border-radius: 12px;
+    }
+
+    .caht-input-group {
+        flex: 1 1 100%;
+        padding: 8px 12px;
+    }
+
+    .caht-input-group-small {
+        flex: 1 1 calc(50% - 4px);
+    }
+}
