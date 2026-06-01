@@ -43,15 +43,15 @@ class CAHT_Admin {
         add_submenu_page('caht-dashboard', 'Bölgeler', 'Bölgeler', 'manage_options', 'caht-bolgeler', array($this, 'render_bolgeler'));
         add_submenu_page('caht-dashboard', 'Havalimanları', 'Havalimanları', 'manage_options', 'caht-havalimanlari', array($this, 'render_havalimanlari'));
         add_submenu_page('caht-dashboard', 'Sabit Fiyatlar', 'Sabit Fiyatlar', 'manage_options', 'caht-sabit-fiyatlar', array($this, 'render_sabit_fiyatlar'));
+        add_submenu_page('caht-dashboard', 'SMTP Settings', 'SMTP Settings', 'manage_options', 'caht-smtp', array($this, 'render_smtp'));
         add_submenu_page('caht-dashboard', 'Ayarlar', 'Ayarlar', 'manage_options', 'caht-ayarlar', array($this, 'render_ayarlar'));
     }
     
     public function handle_post_actions() {
         if (!isset($_POST['caht_action'])) return;
-        if (!wp_verify_nonce($_POST['_wpnonce'] ?? '', 'caht_nonce')) {
-            wp_die('Güvenlik kontrolü başarısız.');
-        }
-        
+        if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'caht_nonce')) return;
+        if (!current_user_can('manage_options')) return;
+
         $action = sanitize_text_field($_POST['caht_action']);
         switch ($action) {
             case 'arac_kaydet': $this->save_arac(); break;
@@ -60,6 +60,7 @@ class CAHT_Admin {
             case 'sabit_fiyat_kaydet': $this->save_sabit_fiyat(); break;
             case 'sabit_fiyat_guncelle': $this->save_sabit_fiyat(); break;
             case 'toplu_fiyat_guncelle': $this->toplu_fiyat_guncelle(); break;
+            case 'smtp_kaydet': $this->save_smtp_settings(); break;
             case 'ayarlari_kaydet': $this->save_settings(); break;
         }
     }
@@ -106,64 +107,76 @@ class CAHT_Admin {
         }
     }
     
-   public function render_bolgeler() {
-    global $wpdb;
-    $prefix = $wpdb->prefix . 'caht_';
+    public function render_smtp() {
+        include CAHT_PLUGIN_DIR . 'admin/views/smtp-ayarlar.php';
+    }
     
-    // Tüm bölgeleri çek
-    $bolgeler = $wpdb->get_results("SELECT * FROM {$prefix}bolgeler ORDER BY olusturma_tarihi DESC");
+    private function save_smtp_settings() {
+        update_option('caht_smtp_host', sanitize_text_field($_POST['smtp_host'] ?? ''));
+        update_option('caht_smtp_port', sanitize_text_field($_POST['smtp_port'] ?? '587'));
+        update_option('caht_smtp_encryption', sanitize_text_field($_POST['smtp_encryption'] ?? 'tls'));
+        update_option('caht_smtp_username', sanitize_text_field($_POST['smtp_username'] ?? ''));
+        update_option('caht_smtp_password', sanitize_text_field($_POST['smtp_password'] ?? ''));
+        update_option('caht_smtp_from_name', sanitize_text_field($_POST['smtp_from_name'] ?? get_bloginfo('name')));
+        update_option('caht_smtp_from_email', sanitize_email($_POST['smtp_from_email'] ?? get_option('admin_email')));
+        update_option('caht_smtp_enabled', sanitize_text_field($_POST['smtp_enabled'] ?? '0'));
+        
+        wp_redirect(admin_url('admin.php?page=caht-smtp&saved=1'));
+        exit;
+    }
     
-    // DEBUG: Eğer koordinatlar boşsa logla
-    if (defined('WP_DEBUG') && WP_DEBUG && !empty($bolgeler)) {
-        foreach ($bolgeler as $b) {
-            $k = json_decode($b->koordinatlar);
-            if (empty($k)) {
-                error_log('CAHT DEBUG - Bölge ID: ' . $b->id . ' | Ad: ' . $b->ad . ' | Koordinatlar: [' . $b->koordinatlar . '] | Uzunluk: ' . strlen($b->koordinatlar));
+    public function render_bolgeler() {
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'caht_';
+        
+        $bolgeler = $wpdb->get_results("SELECT * FROM {$prefix}bolgeler ORDER BY olusturma_tarihi DESC");
+        
+        if (defined('WP_DEBUG') && WP_DEBUG && !empty($bolgeler)) {
+            foreach ($bolgeler as $b) {
+                $k = json_decode($b->koordinatlar);
+                if (empty($k)) {
+                    error_log('CAHT DEBUG - Bölge ID: ' . $b->id . ' | Ad: ' . $b->ad . ' | Koordinatlar: [' . $b->koordinatlar . '] | Uzunluk: ' . strlen($b->koordinatlar));
+                }
             }
         }
-    }
-    
-    // Ekleme/Düzenleme sayfası - TEK SAYFA
-    if ((isset($_GET['action']) && $_GET['action'] === 'ekle') || (isset($_GET['edit']) && is_numeric($_GET['edit']))) {
-        $edit_mode = false;
-        $bolge = null;
-        if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
-            $edit_mode = true;
-            $bolge = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM {$prefix}bolgeler WHERE id = %d",
-                intval($_GET['edit'])
-            ));
+        
+        if ((isset($_GET['action']) && $_GET['action'] === 'ekle') || (isset($_GET['edit']) && is_numeric($_GET['edit']))) {
+            $edit_mode = false;
+            $bolge = null;
+            if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
+                $edit_mode = true;
+                $bolge = $wpdb->get_row($wpdb->prepare(
+                    "SELECT * FROM {$prefix}bolgeler WHERE id = %d",
+                    intval($_GET['edit'])
+                ));
+            }
+            include CAHT_PLUGIN_DIR . 'admin/views/bolge-ekle.php';
+        } else {
+            include CAHT_PLUGIN_DIR . 'admin/views/bolge-listesi.php';
         }
-        include CAHT_PLUGIN_DIR . 'admin/views/bolge-ekle.php';
-    } else {
-        include CAHT_PLUGIN_DIR . 'admin/views/bolge-listesi.php';
     }
-}
     
     public function render_havalimanlari() {
-    global $wpdb;
-    $prefix = $wpdb->prefix . 'caht_';
-    
-    // HER ZAMAN tüm havalimanlarını çek
-    $havalimanlari = $wpdb->get_results("SELECT * FROM {$prefix}havalimanlar ORDER BY olusturma_tarihi DESC");
-    
-    // Ekleme/Düzenleme sayfası - TEK SAYFA
-    if ((isset($_GET['action']) && $_GET['action'] === 'ekle') || (isset($_GET['edit']) && is_numeric($_GET['edit']))) {
-        $edit_mode = false;
-        $havalimani = null;
-        if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
-            $edit_mode = true;
-            $havalimani = $wpdb->get_row($wpdb->prepare(
-                "SELECT * FROM {$prefix}havalimanlar WHERE id = %d",
-                intval($_GET['edit'])
-            ));
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'caht_';
+        
+        $havalimanlari = $wpdb->get_results("SELECT * FROM {$prefix}havalimanlar ORDER BY olusturma_tarihi DESC");
+        
+        if ((isset($_GET['action']) && $_GET['action'] === 'ekle') || (isset($_GET['edit']) && is_numeric($_GET['edit']))) {
+            $edit_mode = false;
+            $havalimani = null;
+            if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
+                $edit_mode = true;
+                $havalimani = $wpdb->get_row($wpdb->prepare(
+                    "SELECT * FROM {$prefix}havalimanlar WHERE id = %d",
+                    intval($_GET['edit'])
+                ));
+            }
+            include CAHT_PLUGIN_DIR . 'admin/views/havalimani-ekle.php';
+        } else {
+            include CAHT_PLUGIN_DIR . 'admin/views/havalimani-listesi.php';
         }
-        include CAHT_PLUGIN_DIR . 'admin/views/havalimani-ekle.php';
-    } else {
-        // Liste sayfası - sadece tablo
-        include CAHT_PLUGIN_DIR . 'admin/views/havalimani-listesi.php';
     }
-}
     
     public function render_sabit_fiyatlar() {
         global $wpdb;
@@ -258,126 +271,116 @@ class CAHT_Admin {
     }
     
     private function save_bolge() {
-    global $wpdb;
-    $prefix = $wpdb->prefix . 'caht_';
-    
-    $ad = sanitize_text_field($_POST['ad'] ?? '');
-    $koordinatlar_raw = $_POST['koordinatlar'] ?? '';
-    
-    // BACKSLASH TEMİZLE - WordPress magic quotes etkisi
-    $koordinatlar = stripslashes($koordinatlar_raw);
-    
-    // DEBUG
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log('CAHT SAVE_BOLGE RAW: ' . $koordinatlar_raw);
-        error_log('CAHT SAVE_BOLGE CLEAN: ' . $koordinatlar);
-    }
-    
-    // JSON valid mi kontrol et
-    $test_decode = json_decode($koordinatlar, true);
-    if (!is_array($test_decode) || empty($test_decode)) {
-        wp_die('Hata: Geçersiz koordinat formatı. Lütfen haritada poligon çizin ve tekrar deneyin.<br>Ham veri: ' . esc_html(substr($koordinatlar, 0, 200)));
-    }
-    
-    $data = array(
-        'ad' => $ad,
-        'koordinatlar' => $koordinatlar,
-    );
-    
-    if (!empty($_POST['bolge_id'])) {
-        $wpdb->update($prefix . 'bolgeler', $data, array('id' => intval($_POST['bolge_id'])));
-    } else {
-        $wpdb->insert($prefix . 'bolgeler', $data);
-    }
-    
-    wp_redirect(admin_url('admin.php?page=caht-bolgeler&action=ekle&eklendi=1'));
-    exit;
-}
-    
-   private function save_havalimani() {
-    global $wpdb;
-    $prefix = $wpdb->prefix . 'caht_';
-    
-    $ad = sanitize_text_field($_POST['ad'] ?? '');
-    $koordinatlar_raw = $_POST['koordinatlar'] ?? '';
-    
-    // BACKSLASH TEMİZLE
-    $koordinatlar = stripslashes($koordinatlar_raw);
-    
-    // JSON valid mi kontrol et
-    $test_decode = json_decode($koordinatlar, true);
-    if (!is_array($test_decode) || empty($test_decode)) {
-        wp_die('Hata: Geçersiz koordinat formatı. Lütfen haritada poligon çizin ve tekrar deneyin.');
-    }
-    
-    $data = array(
-        'ad' => $ad,
-        'koordinatlar' => $koordinatlar,
-    );
-    
-    if (!empty($_POST['havalimani_id'])) {
-        $wpdb->update($prefix . 'havalimanlar', $data, array('id' => intval($_POST['havalimani_id'])));
-    } else {
-        $wpdb->insert($prefix . 'havalimanlar', $data);
-    }
-    
-    wp_redirect(admin_url('admin.php?page=caht-havalimanlari&action=ekle&eklendi=1'));
-    exit;
-}
-    
-    private function save_sabit_fiyat() {
-    global $wpdb;
-    $prefix = $wpdb->prefix . 'caht_';
-    
-    $id = !empty($_POST['fiyat_id']) ? intval($_POST['fiyat_id']) : 0;
-    
-    // VALIDASYON - Her iki alan da zorunlu
-    $arac_id = intval($_POST['arac_id'] ?? 0);
-    $havalimani_id = intval($_POST['havalimani_id'] ?? 0);
-    $bolge_id = intval($_POST['bolge_id'] ?? 0);
-    $sabit_fiyat = floatval($_POST['sabit_fiyat'] ?? 0);
-    
-    if ($arac_id <= 0) {
-        wp_die('Lütfen bir araç seçin.');
-    }
-    if ($havalimani_id <= 0) {
-        wp_die('Lütfen bir havalimanı seçin.');
-    }
-    if ($bolge_id <= 0) {
-        wp_die('Lütfen bir bölge seçin.');
-    }
-    if ($sabit_fiyat <= 0) {
-        wp_die('Lütfen geçerli bir fiyat girin.');
-    }
-    
-    // HER İKİSİ DE KAYDEDİLİYOR - Artık null değil
-    $data = array(
-        'arac_id' => $arac_id,
-        'havalimani_id' => $havalimani_id,
-        'bolge_id' => $bolge_id,
-        'sabit_fiyat' => $sabit_fiyat,
-    );
-    
-    if ($id > 0) {
-        $wpdb->update($prefix . 'fiyat_sabitleri', $data, array('id' => $id));
-    } else {
-        // Aynı kural var mı kontrol et
-        $existing = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$prefix}fiyat_sabitleri 
-             WHERE arac_id = %d AND havalimani_id = %d AND bolge_id = %d",
-            $arac_id, $havalimani_id, $bolge_id
-        ));
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'caht_';
         
-        if ($existing) {
-            wp_die('Bu araç için bu havalimanı-bölge kombinasyonunda zaten bir kural var. Lütfen mevcut kuralı düzenleyin.');
+        $ad = sanitize_text_field($_POST['ad'] ?? '');
+        $koordinatlar_raw = $_POST['koordinatlar'] ?? '';
+        $koordinatlar = stripslashes($koordinatlar_raw);
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('CAHT SAVE_BOLGE RAW: ' . $koordinatlar_raw);
+            error_log('CAHT SAVE_BOLGE CLEAN: ' . $koordinatlar);
         }
         
-        $wpdb->insert($prefix . 'fiyat_sabitleri', $data);
+        $test_decode = json_decode($koordinatlar, true);
+        if (!is_array($test_decode) || empty($test_decode)) {
+            wp_die('Hata: Geçersiz koordinat formatı. Lütfen haritada poligon çizin ve tekrar deneyin.<br>Ham veri: ' . esc_html(substr($koordinatlar, 0, 200)));
+        }
+        
+        $data = array(
+            'ad' => $ad,
+            'koordinatlar' => $koordinatlar,
+        );
+        
+        if (!empty($_POST['bolge_id'])) {
+            $wpdb->update($prefix . 'bolgeler', $data, array('id' => intval($_POST['bolge_id'])));
+        } else {
+            $wpdb->insert($prefix . 'bolgeler', $data);
+        }
+        
+        wp_redirect(admin_url('admin.php?page=caht-bolgeler&action=ekle&eklendi=1'));
+        exit;
     }
     
-    wp_redirect(admin_url('admin.php?page=caht-sabit-fiyatlar'));
-    exit;
-}
+    private function save_havalimani() {
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'caht_';
+        
+        $ad = sanitize_text_field($_POST['ad'] ?? '');
+        $koordinatlar_raw = $_POST['koordinatlar'] ?? '';
+        $koordinatlar = stripslashes($koordinatlar_raw);
+        
+        $test_decode = json_decode($koordinatlar, true);
+        if (!is_array($test_decode) || empty($test_decode)) {
+            wp_die('Hata: Geçersiz koordinat formatı. Lütfen haritada poligon çizin ve tekrar deneyin.');
+        }
+        
+        $data = array(
+            'ad' => $ad,
+            'koordinatlar' => $koordinatlar,
+        );
+        
+        if (!empty($_POST['havalimani_id'])) {
+            $wpdb->update($prefix . 'havalimanlar', $data, array('id' => intval($_POST['havalimani_id'])));
+        } else {
+            $wpdb->insert($prefix . 'havalimanlar', $data);
+        }
+        
+        wp_redirect(admin_url('admin.php?page=caht-havalimanlari&action=ekle&eklendi=1'));
+        exit;
+    }
+    
+    private function save_sabit_fiyat() {
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'caht_';
+        
+        $id = !empty($_POST['fiyat_id']) ? intval($_POST['fiyat_id']) : 0;
+        
+        $arac_id = intval($_POST['arac_id'] ?? 0);
+        $havalimani_id = intval($_POST['havalimani_id'] ?? 0);
+        $bolge_id = intval($_POST['bolge_id'] ?? 0);
+        $sabit_fiyat = floatval($_POST['sabit_fiyat'] ?? 0);
+        
+        if ($arac_id <= 0) {
+            wp_die('Lütfen bir araç seçin.');
+        }
+        if ($havalimani_id <= 0) {
+            wp_die('Lütfen bir havalimanı seçin.');
+        }
+        if ($bolge_id <= 0) {
+            wp_die('Lütfen bir bölge seçin.');
+        }
+        if ($sabit_fiyat <= 0) {
+            wp_die('Lütfen geçerli bir fiyat girin.');
+        }
+        
+        $data = array(
+            'arac_id' => $arac_id,
+            'havalimani_id' => $havalimani_id,
+            'bolge_id' => $bolge_id,
+            'sabit_fiyat' => $sabit_fiyat,
+        );
+        
+        if ($id > 0) {
+            $wpdb->update($prefix . 'fiyat_sabitleri', $data, array('id' => $id));
+        } else {
+            $existing = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$prefix}fiyat_sabitleri 
+                 WHERE arac_id = %d AND havalimani_id = %d AND bolge_id = %d",
+                $arac_id, $havalimani_id, $bolge_id
+            ));
+            
+            if ($existing) {
+                wp_die('Bu araç için bu havalimanı-bölge kombinasyonunda zaten bir kural var. Lütfen mevcut kuralı düzenleyin.');
+            }
+            
+            $wpdb->insert($prefix . 'fiyat_sabitleri', $data);
+        }
+        
+        wp_redirect(admin_url('admin.php?page=caht-sabit-fiyatlar'));
+        exit;
+    }
     
     private function toplu_fiyat_guncelle() {
         global $wpdb;
@@ -521,5 +524,20 @@ class CAHT_Admin {
         $wpdb->update($prefix . 'bolgeler', array('ad' => $ad, 'koordinatlar' => $koordinatlar), array('id' => $id));
         
         wp_send_json_success(array('message' => 'Bölge güncellendi.'));
+    }
+    
+    public function ajax_havalimani_guncelle() {
+        check_ajax_referer('caht_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_die();
+        
+        $id = intval($_POST['id']);
+        $ad = sanitize_text_field($_POST['ad']);
+        $koordinatlar = sanitize_text_field($_POST['koordinatlar']);
+        
+        global $wpdb;
+        $prefix = $wpdb->prefix . 'caht_';
+        $wpdb->update($prefix . 'havalimanlar', array('ad' => $ad, 'koordinatlar' => $koordinatlar), array('id' => $id));
+        
+        wp_send_json_success(array('message' => 'Havalimanı güncellendi.'));
     }
 }

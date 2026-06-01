@@ -14,15 +14,150 @@ define('CAHT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CAHT_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('CAHT_PLUGIN_BASENAME', plugin_basename(__FILE__));
 
+
 /**
  * Aktivasyon
+
+
+
  */
+
+// === SMTP TEST MAIL HANDLER ===
+// Bunu eklenti ana dosyasına veya includes/class-caht.php gibi bir yere ekle
+
+add_action('admin_post_caht_smtp_test', 'caht_handle_smtp_test');
+add_action('admin_post_nopriv_caht_smtp_test', 'caht_handle_smtp_test'); // Güvenlik için nopriv'i de ekle ama redirect et
+
+function caht_handle_smtp_test() {
+    // Nonce kontrolü
+    if (!isset($_POST['_wpnonce']) || !wp_verify_nonce($_POST['_wpnonce'], 'caht_nonce')) {
+        wp_die('Security check failed. Please refresh the page and try again.');
+    }
+    
+    // Yetki kontrolü
+    if (!current_user_can('manage_options')) {
+        wp_die('You do not have permission to perform this action.');
+    }
+    
+    // SMTP ayarlarını al
+    $smtp_enabled = get_option('caht_smtp_enabled', '0');
+    $to = get_option('caht_smtp_from_email', get_option('admin_email'));
+    
+    // PHPMailer'ı manuel yapılandır (test için)
+    $smtp_host = get_option('caht_smtp_host', '');
+    $smtp_port = get_option('caht_smtp_port', '587');
+    $smtp_encryption = get_option('caht_smtp_encryption', 'tls');
+    $smtp_username = get_option('caht_smtp_username', '');
+    $smtp_password = get_option('caht_smtp_password', '');
+    $from_name = get_option('caht_smtp_from_name', get_bloginfo('name'));
+    $from_email = get_option('caht_smtp_from_email', get_option('admin_email'));
+    
+    if (empty($smtp_host) || empty($smtp_username) || empty($smtp_password)) {
+        wp_redirect(admin_url('admin.php?page=caht-smtp&test=error&reason=empty'));
+        exit;
+    }
+    
+    $subject = 'CAHT Transfer - SMTP Test Email';
+    
+    $message = '
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8"></head>
+    <body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:30px;">
+        <div style="background:linear-gradient(135deg,#1b510d,#237e12);padding:30px;border-radius:16px 16px 0 0;text-align:center;">
+            <h2 style="color:#fff;margin:0;">SMTP Test Successful!</h2>
+        </div>
+        <div style="background:#fff;padding:30px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 16px 16px;">
+            <p style="color:#1a1a1a;font-size:15px;line-height:1.6;">
+                Your SMTP configuration is working correctly.
+            </p>
+            <table style="width:100%;border-collapse:collapse;margin-top:20px;">
+                <tr style="border-bottom:1px solid #e5e7eb;">
+                    <td style="padding:10px;color:#6b7280;font-size:13px;font-weight:600;">Server</td>
+                    <td style="padding:10px;color:#1a1a1a;font-size:14px;">' . esc_html($smtp_host) . ':' . esc_html($smtp_port) . '</td>
+                </tr>
+                <tr style="border-bottom:1px solid #e5e7eb;">
+                    <td style="padding:10px;color:#6b7280;font-size:13px;font-weight:600;">Encryption</td>
+                    <td style="padding:10px;color:#1a1a1a;font-size:14px;">' . esc_html(strtoupper($smtp_encryption)) . '</td>
+                </tr>
+                <tr style="border-bottom:1px solid #e5e7eb;">
+                    <td style="padding:10px;color:#6b7280;font-size:13px;font-weight:600;">Username</td>
+                    <td style="padding:10px;color:#1a1a1a;font-size:14px;">' . esc_html($smtp_username) . '</td>
+                </tr>
+                <tr>
+                    <td style="padding:10px;color:#6b7280;font-size:13px;font-weight:600;">Time</td>
+                    <td style="padding:10px;color:#1a1a1a;font-size:14px;">' . date('Y-m-d H:i:s') . ' (' . wp_timezone_string() . ')</td>
+                </tr>
+            </table>
+        </div>
+    </body>
+    </html>';
+    
+    $headers = array('Content-Type: text/html; charset=UTF-8');
+    
+    // SMTP'yi geçici olarak force et
+    add_filter('wp_mail_from', function($from) use ($from_email) {
+        return $from_email;
+    }, 9999);
+    
+    add_filter('wp_mail_from_name', function($from_name_orig) use ($from_name) {
+        return $from_name;
+    }, 9999);
+    
+    // PHPMailer'ı SMTP için yapılandır
+    add_action('phpmailer_init', 'caht_force_smtp_config', 9999);
+    
+    $sent = wp_mail($to, $subject, $message, $headers);
+    
+    // Hook'ları temizle
+    remove_action('phpmailer_init', 'caht_force_smtp_config', 9999);
+    
+    if ($sent) {
+        wp_redirect(admin_url('admin.php?page=caht-smtp&test=success'));
+    } else {
+        global $phpmailer;
+        $error_msg = '';
+        if ($phpmailer && !empty($phpmailer->ErrorInfo)) {
+            $error_msg = urlencode($phpmailer->ErrorInfo);
+        }
+        wp_redirect(admin_url('admin.php?page=caht-smtp&test=error&reason=' . $error_msg));
+    }
+    exit;
+}
+
+function caht_force_smtp_config($phpmailer) {
+    $smtp_host = get_option('caht_smtp_host', '');
+    $smtp_port = get_option('caht_smtp_port', '587');
+    $smtp_encryption = get_option('caht_smtp_encryption', 'tls');
+    $smtp_username = get_option('caht_smtp_username', '');
+    $smtp_password = get_option('caht_smtp_password', '');
+    
+    $phpmailer->isSMTP();
+    $phpmailer->Host = $smtp_host;
+    $phpmailer->SMTPAuth = true;
+    $phpmailer->Port = intval($smtp_port);
+    $phpmailer->Username = $smtp_username;
+    $phpmailer->Password = $smtp_password;
+    
+    if ($smtp_encryption === 'ssl') {
+        $phpmailer->SMTPSecure = 'ssl';
+    } elseif ($smtp_encryption === 'tls') {
+        $phpmailer->SMTPSecure = 'tls';
+    } else {
+        $phpmailer->SMTPSecure = '';
+    }
+    
+    $phpmailer->SMTPDebug = 0;
+    $phpmailer->Debugoutput = 'error_log';
+}
 function caht_activate() {
     global $wpdb;
     $charset_collate = $wpdb->get_charset_collate();
     $prefix = $wpdb->prefix . 'caht_';
 
     require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    // Mevcut require_once satırlarının yanına ekle:
+require_once CAHT_PLUGIN_DIR . 'includes/class-caht-mail.php';
 
     // ARAÇLAR TABLOSU
     $sql = "CREATE TABLE IF NOT EXISTS {$prefix}araclar (
@@ -182,6 +317,32 @@ register_activation_hook(__FILE__, 'caht_activate');
 /**
  * Deaktivasyon
  */
+// WordPress init hook'una ekle
+add_action('admin_post_caht_smtp_test', 'caht_send_test_email');
+
+function caht_send_test_email() {
+    if (!wp_verify_nonce($_POST['_wpnonce'], 'caht_nonce')) {
+        wp_die('Security check failed.');
+    }
+    
+    $to = get_option('caht_smtp_from_email', get_option('admin_email'));
+    $subject = 'CAHT Transfer - SMTP Test Email';
+    
+    $message = '
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:30px;">
+        <h2 style="color:#237e12;">SMTP Test Successful!</h2>
+        <p>Your SMTP configuration is working correctly.</p>
+        <p><strong>Server:</strong> ' . esc_html(get_option('caht_smtp_host')) . '</p>
+        <p><strong>Time:</strong> ' . date('Y-m-d H:i:s') . '</p>
+    </div>';
+    
+    $headers = array('Content-Type: text/html; charset=UTF-8');
+    
+    $sent = caht_send_email($to, $subject, $message, $headers);
+    
+    wp_redirect(admin_url('admin.php?page=caht-smtp&test=' . ($sent ? 'success' : 'error')));
+    exit;
+}
 function caht_deactivate() {
     flush_rewrite_rules();
 }

@@ -9,7 +9,35 @@
  * $nereden_lat, $nereden_lng, $nereye_lat, $nereye_lng
  */
 
-// Currency symbol
+// ============================================
+// PARA BİRİMİ DÜZELTME - BUG FIX #1
+// ============================================
+
+// Önce GET/POST parametresini al (kullanıcı butona tıkladıysa)
+$para_birimi_param = isset($_GET['para_birimi']) ? sanitize_text_field($_GET['para_birimi']) : '';
+if (empty($para_birimi_param) && isset($_POST['para_birimi'])) {
+    $para_birimi_param = sanitize_text_field($_POST['para_birimi']);
+}
+
+// WooCommerce varsayılan kurunu al
+$wc_currency_raw = 'TRY';
+if (class_exists('WooCommerce')) {
+    $wc_currency_raw = get_woocommerce_currency();
+}
+
+// WooCommerce kodunu CAHT koduna çevir
+$wc_currency = 'TL';
+$currency_map = array('TRY' => 'TL', 'USD' => 'USD', 'EUR' => 'EUR');
+$wc_currency = isset($currency_map[$wc_currency_raw]) ? $currency_map[$wc_currency_raw] : 'TL';
+
+// Eğer kullanıcı bir para birimi seçtiyse onu kullan, yoksa WooCommerce varsayılanını kullan
+if (!empty($para_birimi_param)) {
+    $para_birimi = $para_birimi_param;
+} else {
+    $para_birimi = $wc_currency;
+}
+
+// Sembol belirle
 $sembol = '₺';
 if ($para_birimi === 'USD') {
     $sembol = '$';
@@ -17,28 +45,121 @@ if ($para_birimi === 'USD') {
     $sembol = '€';
 }
 
-// Use WooCommerce default currency if para_birimi is empty
-if (empty($para_birimi) || $para_birimi === 'TL') {
-    $para_birimi = $wc_currency;
-    if ($para_birimi === 'USD') {
-        $sembol = '$';
-    } elseif ($para_birimi === 'EUR') {
-        $sembol = '€';
+// ============================================
+// KUR VERİLERİ
+// ============================================
+$kurlar = CAHT_Public::get_exchange_rates_static();
+$usd_kur = isset($kurlar['usd']) ? floatval($kurlar['usd']) : 34.50;
+$eur_kur = isset($kurlar['eur']) ? floatval($kurlar['eur']) : 37.04;
+
+// ============================================
+// SABİT FİYAT KONTROLÜ - BUG FIX #2
+// ============================================
+global $wpdb;
+$prefix = $wpdb->prefix . 'caht_';
+
+/**
+ * Noktanın poligon içinde olup olmadığını kontrol et
+ * Ray Casting algoritması
+ */
+function caht_point_in_polygon($lat, $lng, $polygon) {
+    $inside = false;
+    $n = count($polygon);
+    $j = $n - 1;
+    
+    for ($i = 0; $i < $n; $i++) {
+        $xi = $polygon[$i]['lat'];
+        $yi = $polygon[$i]['lng'];
+        $xj = $polygon[$j]['lat'];
+        $yj = $polygon[$j]['lng'];
+        
+        if ((($yi > $lng) != ($yj > $lng)) &&
+            ($lat < ($xj - $xi) * ($lng - $yi) / ($yj - $yi) + $xi)) {
+            $inside = !$inside;
+        }
+        $j = $i;
+    }
+    
+    return $inside;
+}
+
+/**
+ * Koordinatın hangi bölgede/havalimanında olduğunu bul
+ */
+function caht_find_zone($lat, $lng, $zones) {
+    if (empty($zones) || $lat == 0 || $lng == 0) {
+        return null;
+    }
+    
+    foreach ($zones as $zone) {
+        $coords = json_decode($zone->koordinatlar, true);
+        if (!is_array($coords) || empty($coords)) {
+            continue;
+        }
+        
+        if (caht_point_in_polygon($lat, $lng, $coords)) {
+            return $zone->id;
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * Sabit fiyat kuralı var mı kontrol et
+ */
+function caht_get_sabit_fiyat($arac_id, $havalimani_id, $bolge_id) {
+    global $wpdb;
+    $prefix = $wpdb->prefix . 'caht_';
+    
+    if (empty($havalimani_id) || empty($bolge_id)) {
+        return null;
+    }
+    
+    $fiyat = $wpdb->get_var($wpdb->prepare(
+        "SELECT sabit_fiyat FROM {$prefix}fiyat_sabitleri 
+         WHERE arac_id = %d AND havalimani_id = %d AND bolge_id = %d",
+        $arac_id, $havalimani_id, $bolge_id
+    ));
+    
+    return $fiyat ? floatval($fiyat) : null;
+}
+
+// Tüm bölgeleri ve havalimanlarını çek
+$bolgeler = $wpdb->get_results("SELECT id, ad, koordinatlar FROM {$prefix}bolgeler");
+$havalimanlari = $wpdb->get_results("SELECT id, ad, koordinatlar FROM {$prefix}havalimanlar");
+
+// Nereden ve Nereye koordinatlarının hangi bölgelerde/havalimanlarında olduğunu bul
+$nereden_havalimani_id = null;
+$nereden_bolge_id = null;
+$nereye_havalimani_id = null;
+$nereye_bolge_id = null;
+
+// Nereden: Önce havalimanı kontrolü, sonra bölge
+if ($nereden_lat != 0 && $nereden_lng != 0) {
+    $nereden_havalimani_id = caht_find_zone($nereden_lat, $nereden_lng, $havalimanlari);
+    if (!$nereden_havalimani_id) {
+        $nereden_bolge_id = caht_find_zone($nereden_lat, $nereden_lng, $bolgeler);
     }
 }
 
-// Exchange rates
-$kurlar = CAHT_Public::get_exchange_rates_static();
-$usd_kur = $kurlar['usd'];
-$eur_kur = $kurlar['eur'];
+// Nereye: Önce havalimanı kontrolü, sonra bölge
+if ($nereye_lat != 0 && $nereye_lng != 0) {
+    $nereye_havalimani_id = caht_find_zone($nereye_lat, $nereye_lng, $havalimanlari);
+    if (!$nereye_havalimani_id) {
+        $nereye_bolge_id = caht_find_zone($nereye_lat, $nereye_lng, $bolgeler);
+    }
+}
 
-// Extra services prices (in TL)
+// ============================================
+// EK HİZMET FİYATLARI
+// ============================================
 $ek_hizmetler = json_decode(get_option('caht_ek_hizmetler', '{}'), true);
-$cocuk_koltugu_tl = $ek_hizmetler['cocuk_koltugu'] ?? 500;
-$karsilama_hizmeti_tl = $ek_hizmetler['karsilama_hizmeti'] ?? 300;
-$third_bridge_tl = $ek_hizmetler['third_bridge'] ?? 700;
+$cocuk_koltugu_tl = isset($ek_hizmetler['cocuk_koltugu']) ? floatval($ek_hizmetler['cocuk_koltugu']) : 500;
+$karsilama_hizmeti_tl = isset($ek_hizmetler['karsilama_hizmeti']) ? floatval($ek_hizmetler['karsilama_hizmeti']) : 300;
+$third_bridge_tl = isset($ek_hizmetler['third_bridge']) ? floatval($ek_hizmetler['third_bridge']) : 700;
 
-// Convert extra services to selected currency
+// Seçili para birimine çevir
 if ($para_birimi === 'USD') {
     $cocuk_koltugu_pb = $cocuk_koltugu_tl / $usd_kur;
     $karsilama_hizmeti_pb = $karsilama_hizmeti_tl / $usd_kur;
@@ -53,7 +174,9 @@ if ($para_birimi === 'USD') {
     $third_bridge_pb = $third_bridge_tl;
 }
 
-// Currency conversion function
+// ============================================
+// FİYAT DÖNÜŞTÜRME FONKSİYONU
+// ============================================
 function caht_convert_price($tl_price, $para_birimi, $usd_kur, $eur_kur) {
     if ($para_birimi === 'USD') {
         return $tl_price / $usd_kur;
@@ -428,6 +551,24 @@ function caht_convert_price($tl_price, $para_birimi, $usd_kur, $eur_kur) {
     line-height: 1.5;
 }
 
+/* Sabit Fiyat Badge */
+.caht-sabit-fiyat-badge {
+    background: linear-gradient(135deg, #1b510d 0%, #237e12 100%);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.caht-sabit-fiyat-badge i {
+    font-size: 11px;
+}
+
 /* Extra Services */
 .caht-arac-kart .ek-hizmetler {
     margin-bottom: 20px;
@@ -611,7 +752,57 @@ function caht_convert_price($tl_price, $para_birimi, $usd_kur, $eur_kur) {
     <!-- Vehicle List -->
     <div class="caht-arac-listesi">
         <?php foreach ($araclar as $arac): 
-            // === IMAGE PROCESSING ===
+            // ============================================
+            // SABİT FİYAT KONTROLÜ - HER ARAÇ İÇİN
+            // ============================================
+            $sabit_fiyat_tl = null;
+            $sabit_fiyat_uygulandi = false;
+            
+            // Nereden = Havalimanı, Nereye = Bölge
+            if ($nereden_havalimani_id && $nereye_bolge_id) {
+                $sabit_fiyat_tl = caht_get_sabit_fiyat($arac->id, $nereden_havalimani_id, $nereye_bolge_id);
+            }
+            // Nereden = Bölge, Nereye = Havalimanı
+            elseif ($nereden_bolge_id && $nereye_havalimani_id) {
+                $sabit_fiyat_tl = caht_get_sabit_fiyat($arac->id, $nereye_havalimani_id, $nereden_bolge_id);
+            }
+            // Nereden = Havalimanı, Nereye = Havalimanı (nadir ama olabilir)
+            elseif ($nereden_havalimani_id && $nereye_havalimani_id) {
+                // İki havalimanı arası - önce havalimanı→bölge mantığıyla dene
+                // veya direkt havalimanı→havalimanı kuralı varsa onu kullan
+                $sabit_fiyat_tl = caht_get_sabit_fiyat($arac->id, $nereden_havalimani_id, $nereye_havalimani_id);
+                if (!$sabit_fiyat_tl) {
+                    $sabit_fiyat_tl = caht_get_sabit_fiyat($arac->id, $nereye_havalimani_id, $nereden_havalimani_id);
+                }
+            }
+            
+            if ($sabit_fiyat_tl !== null && $sabit_fiyat_tl > 0) {
+                $sabit_fiyat_uygulandi = true;
+            }
+
+            // ============================================
+            // FİYAT HESAPLAMA
+            // ============================================
+            if ($sabit_fiyat_uygulandi) {
+                // Sabit fiyat kullan (TL cinsinden)
+                $toplam_fiyat_tl = $sabit_fiyat_tl;
+                if ($gidis_donus) {
+                    $toplam_fiyat_tl *= 2;
+                }
+            } else {
+                // Normal km hesaplaması
+                $toplam_fiyat_tl = ($arac->km_fiyat * $mesafe) + $arac->acilis_ucreti;
+                if ($gidis_donus) {
+                    $toplam_fiyat_tl *= 2;
+                }
+            }
+
+            // Seçili para birimine çevir
+            $goster_fiyat = caht_convert_price($toplam_fiyat_tl, $para_birimi, $usd_kur, $eur_kur);
+
+            // ============================================
+            // GÖRSEL VERİLER
+            // ============================================
             $resimler = array();
             if (!empty($arac->resim)) {
                 $decoded = json_decode($arac->resim, true);
@@ -623,16 +814,7 @@ function caht_convert_price($tl_price, $para_birimi, $usd_kur, $eur_kur) {
             $resim_sayisi = count($resimler);
             $has_image = $resim_sayisi > 0;
 
-            // Price calculation (TL base)
-            $toplam_fiyat_tl = ($arac->km_fiyat * $mesafe) + $arac->acilis_ucreti;
-            if ($gidis_donus) {
-                $toplam_fiyat_tl *= 2;
-            }
-
-            // Convert to selected currency
-            $goster_fiyat = caht_convert_price($toplam_fiyat_tl, $para_birimi, $usd_kur, $eur_kur);
-
-            // Convert vehicle prices to selected currency
+            // Araç fiyatlarını seçili para birimine çevir (detay gösterimi için)
             $km_fiyat_pb = caht_convert_price($arac->km_fiyat, $para_birimi, $usd_kur, $eur_kur);
             $acilis_ucreti_pb = caht_convert_price($arac->acilis_ucreti, $para_birimi, $usd_kur, $eur_kur);
 
@@ -698,6 +880,12 @@ function caht_convert_price($tl_price, $para_birimi, $usd_kur, $eur_kur) {
                     <div class="arac-aciklama"><?php echo esc_html($arac->aciklama); ?></div>
                 <?php endif; ?>
 
+                <?php if ($sabit_fiyat_uygulandi): ?>
+                    <div class="caht-sabit-fiyat-badge">
+                        <i class="fas fa-tag"></i> Fixed Price Route
+                    </div>
+                <?php endif; ?>
+
                 <div class="arac-ozellikler">
                     <div class="arac-ozellik">
                         <i class="fas fa-users"></i> <?php echo intval($arac->kapasite); ?> Passengers
@@ -705,13 +893,15 @@ function caht_convert_price($tl_price, $para_birimi, $usd_kur, $eur_kur) {
                     <div class="arac-ozellik">
                         <i class="fas fa-suitcase"></i> <?php echo intval($arac->bavul_kapasite); ?> Luggage
                     </div>
-                    <div class="arac-ozellik">
-                        <i class="fas fa-gas-pump"></i> <?php echo number_format($km_fiyat_pb, 2); ?> <?php echo esc_html($sembol); ?>/km
-                    </div>
-                    <?php if ($arac->acilis_ucreti > 0): ?>
+                    <?php if (!$sabit_fiyat_uygulandi): ?>
                         <div class="arac-ozellik">
-                            <i class="fas fa-hand-holding-usd"></i> Base fee <?php echo number_format($acilis_ucreti_pb, 2); ?> <?php echo esc_html($sembol); ?>
+                            <i class="fas fa-gas-pump"></i> <?php echo number_format($km_fiyat_pb, 2); ?> <?php echo esc_html($sembol); ?>/km
                         </div>
+                        <?php if ($arac->acilis_ucreti > 0): ?>
+                            <div class="arac-ozellik">
+                                <i class="fas fa-hand-holding-usd"></i> Base fee <?php echo number_format($acilis_ucreti_pb, 2); ?> <?php echo esc_html($sembol); ?>
+                            </div>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
 
@@ -721,9 +911,13 @@ function caht_convert_price($tl_price, $para_birimi, $usd_kur, $eur_kur) {
                         <span class="fiyat-deger"><?php echo number_format($goster_fiyat, 2); ?></span>
                     </div>
                     <div class="fiyat-detay">
-                        <?php echo number_format($mesafe, 1); ?> km × <?php echo number_format($km_fiyat_pb, 2); ?> <?php echo esc_html($sembol); ?>/km 
-                        <?php if ($arac->acilis_ucreti > 0): ?>+ Base fee <?php echo number_format($acilis_ucreti_pb, 2); ?> <?php echo esc_html($sembol); ?><?php endif; ?>
-                        <?php if ($gidis_donus): ?> × 2 (Round Trip)<?php endif; ?>
+                        <?php if ($sabit_fiyat_uygulandi): ?>
+                            Fixed price for this route <?php if ($gidis_donus): ?>× 2 (Round Trip)<?php endif; ?>
+                        <?php else: ?>
+                            <?php echo number_format($mesafe, 1); ?> km × <?php echo number_format($km_fiyat_pb, 2); ?> <?php echo esc_html($sembol); ?>/km 
+                            <?php if ($arac->acilis_ucreti > 0): ?>+ Base fee <?php echo number_format($acilis_ucreti_pb, 2); ?> <?php echo esc_html($sembol); ?><?php endif; ?>
+                            <?php if ($gidis_donus): ?> × 2 (Round Trip)<?php endif; ?>
+                        <?php endif; ?>
                     </div>
                 </div>
 

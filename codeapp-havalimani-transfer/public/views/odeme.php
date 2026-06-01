@@ -239,6 +239,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['caht_odeme_submit']))
             // Başarılı durum
             if (empty($errors) && $rezervasyon_id) {
                 $success = true;
+
+                // ============================================
+                // MAIL GÖNDERİMİ - MÜŞTERİ + ADMIN
+                // ============================================
+                if (!class_exists('CAHT_Mail')) {
+                    $mail_file = CAHT_PLUGIN_DIR . 'includes/class-caht-mail.php';
+                    if (file_exists($mail_file)) {
+                        require_once $mail_file;
+                    }
+                }
+
+                if (class_exists('CAHT_Mail')) {
+                    // Müşteriye onay maili gönder
+                    CAHT_Mail::send_customer_confirmation($rezervasyon_id);
+
+                    // Admin'e bildirim maili gönder
+                    CAHT_Mail::send_admin_notification($rezervasyon_id);
+                }
+                // ============================================
             }
         }
     }
