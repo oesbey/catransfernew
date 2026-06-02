@@ -2,26 +2,8 @@
 /**
  * CAHT Mail System - SMTP Support
  */
-/**
- * CAHT Mail System - SMTP Support
- */
 
 if (!defined('ABSPATH')) exit;
-
-// PHPMailer'ı yükle (WordPress'in kendi sürümünü kullan veya dahil et)
-if (!class_exists('PHPMailer\PHPMailer\PHPMailer') && !class_exists('PHPMailer')) {
-    // WordPress 5.5+ yeni namespace
-    if (file_exists(ABSPATH . WPINC . '/PHPMailer/PHPMailer.php')) {
-        require_once ABSPATH . WPINC . '/PHPMailer/PHPMailer.php';
-        require_once ABSPATH . WPINC . '/PHPMailer/SMTP.php';
-        require_once ABSPATH . WPINC . '/PHPMailer/Exception.php';
-    } 
-    // Eski WordPress sürümleri
-    elseif (file_exists(ABSPATH . WPINC . '/class-phpmailer.php')) {
-        require_once ABSPATH . WPINC . '/class-phpmailer.php';
-        require_once ABSPATH . WPINC . '/class-smtp.php';
-    }
-}
 
 class CAHT_Mail {
     
@@ -45,6 +27,15 @@ class CAHT_Mail {
         $phpmailer->Port = intval(get_option('caht_smtp_port', 587));
         $phpmailer->Username = get_option('caht_smtp_username');
         $phpmailer->Password = get_option('caht_smtp_password');
+        $phpmailer->Timeout = 30;
+        
+        // DEBUG MODU - WP_DEBUG açıksa SMTP konuşmasını logla
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $phpmailer->SMTPDebug = 2;
+            $phpmailer->Debugoutput = function($str, $level) {
+                error_log('CAHT SMTP [' . $level . ']: ' . $str);
+            };
+        }
         
         $encryption = get_option('caht_smtp_encryption', 'tls');
         if ($encryption === 'ssl') {
@@ -53,6 +44,7 @@ class CAHT_Mail {
             $phpmailer->SMTPSecure = 'tls';
         } else {
             $phpmailer->SMTPSecure = '';
+            $phpmailer->SMTPAutoTLS = false;
         }
         
         $phpmailer->From = get_option('caht_smtp_from_email', get_option('admin_email'));
@@ -74,7 +66,14 @@ class CAHT_Mail {
         
         $body = self::get_email_template($subject, $content);
         
-        return wp_mail($to, $subject, $body, $headers, $attachments);
+        $result = wp_mail($to, $subject, $body, $headers, $attachments);
+        
+        // Debug log
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('CAHT Mail::send() - To: ' . $to . ' | Subject: ' . $subject . ' | Result: ' . ($result ? 'SUCCESS' : 'FAILED'));
+        }
+        
+        return $result;
     }
     
     /**
@@ -83,15 +82,18 @@ class CAHT_Mail {
     private static function get_email_template($title, $content) {
         $site_name = get_bloginfo('name');
         $site_url = home_url('/');
-        $logo_url = get_site_icon_url(128, get_template_directory_uri() . '/assets/images/logo.png');
         
-        // Fallback logo: customizer'dan site logo
+        // Logo bul
+        $logo_url = '';
         $custom_logo_id = get_theme_mod('custom_logo');
         if ($custom_logo_id) {
             $logo_data = wp_get_attachment_image_src($custom_logo_id, 'full');
             if ($logo_data) {
                 $logo_url = $logo_data[0];
             }
+        }
+        if (empty($logo_url)) {
+            $logo_url = get_site_icon_url(128, get_template_directory_uri() . '/assets/images/logo.png');
         }
         
         $year = date('Y');
@@ -267,7 +269,7 @@ class CAHT_Mail {
         
         <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:12px;padding:20px;margin-bottom:25px;">
             <p style="color:#166534;margin:0;font-size:14px;line-height:1.6;">
-                <strong style="display:block;margin-bottom:5px;"><i class="fas fa-headset" style="margin-right:6px;"></i>We Will Contact You Shortly</strong>
+                <strong style="display:block;margin-bottom:5px;">We Will Contact You Shortly</strong>
                 Our customer service team will reach out to you within 15 minutes to confirm your reservation and provide driver information.
             </p>
         </div>
@@ -328,7 +330,6 @@ class CAHT_Mail {
         
         <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:20px;margin-bottom:25px;text-align:center;">
             <p style="color:#991b1b;margin:0;font-size:14px;font-weight:600;">
-                <i class="fas fa-exclamation-triangle" style="margin-right:6px;"></i>
                 Action Required: Please confirm this reservation with the customer.
             </p>
         </div>
@@ -396,6 +397,3 @@ class CAHT_Mail {
         return self::send($admin_email, $subject, $content);
     }
 }
-
-// Initialize
-add_action('init', array('CAHT_Mail', 'init'));

@@ -243,19 +243,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['caht_odeme_submit']))
                 // ============================================
                 // MAIL GÖNDERİMİ - MÜŞTERİ + ADMIN
                 // ============================================
-                if (!class_exists('CAHT_Mail')) {
-                    $mail_file = CAHT_PLUGIN_DIR . 'includes/class-caht-mail.php';
-                    if (file_exists($mail_file)) {
-                        require_once $mail_file;
-                    }
-                }
-
+                // CAHT_Mail sınıfı caht_run() içinde zaten yüklendi ve init edildi
+                // Tekrar require_once gerekmez, sadece class var mı kontrol et
                 if (class_exists('CAHT_Mail')) {
                     // Müşteriye onay maili gönder
-                    CAHT_Mail::send_customer_confirmation($rezervasyon_id);
-
+                    $customer_sent = CAHT_Mail::send_customer_confirmation($rezervasyon_id);
+                    
                     // Admin'e bildirim maili gönder
-                    CAHT_Mail::send_admin_notification($rezervasyon_id);
+                    $admin_sent = CAHT_Mail::send_admin_notification($rezervasyon_id);
+                    
+                    // Debug log (WP_DEBUG açıksa)
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('CAHT odeme.php - Customer email: ' . ($customer_sent ? 'SENT' : 'FAILED'));
+                        error_log('CAHT odeme.php - Admin email: ' . ($admin_sent ? 'SENT' : 'FAILED'));
+                    }
+                } else {
+                    // Eğer class yoksa (nadiren olur) logla
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log('CAHT odeme.php - ERROR: CAHT_Mail class not found!');
+                    }
                 }
                 // ============================================
             }
